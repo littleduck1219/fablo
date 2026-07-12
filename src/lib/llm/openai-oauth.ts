@@ -111,7 +111,7 @@ export function clearPendingAuth(): void {
   }
 }
 
-export async function createAuthRequest(): Promise<AuthRequest> {
+async function createBrowserAuthRequest(): Promise<AuthRequest> {
   const verifier = base64url(crypto.getRandomValues(new Uint8Array(48)));
   const state = base64url(crypto.getRandomValues(new Uint8Array(16)));
   const digest = await crypto.subtle.digest(
@@ -133,6 +133,24 @@ export async function createAuthRequest(): Promise<AuthRequest> {
   });
 
   return { url: `${AUTHORIZE_URL}?${params.toString()}`, verifier, state };
+}
+
+async function createServerAuthRequest(): Promise<AuthRequest> {
+  const res = await fetch("/api/openai/oauth/auth-request", { method: "POST" });
+  const req = (await res.json().catch(() => null)) as AuthRequest | null;
+  if (!res.ok || !req?.url || !req.verifier || !req.state) {
+    throw new Error("로그인 URL 생성에 실패했습니다.");
+  }
+  return req;
+}
+
+export async function createAuthRequest(): Promise<AuthRequest> {
+  try {
+    if (!globalThis.crypto?.subtle) throw new Error("Web Crypto unavailable");
+    return await createBrowserAuthRequest();
+  } catch {
+    return createServerAuthRequest();
+  }
 }
 
 /** 붙여넣은 리디렉션 URL(또는 code 값)에서 인가 코드를 추출한다. */

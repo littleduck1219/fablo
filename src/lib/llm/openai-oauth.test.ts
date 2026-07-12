@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { POST as createAuthRequest } from "../../app/api/openai/oauth/auth-request/route.ts";
 import { chooseChatGptModel } from "./openai-oauth.ts";
 
 test("chooseChatGptModel replaces unsupported saved models with the first available model", () => {
@@ -14,4 +15,15 @@ test("chooseChatGptModel keeps a saved model when it is still available", () => 
     chooseChatGptModel(["gpt-5.5", "gpt-5.4"], "gpt-5.4"),
     "gpt-5.4",
   );
+});
+
+test("server auth request creates a PKCE login URL", async () => {
+  const res = await createAuthRequest();
+  assert.equal(res.ok, true);
+  const j = (await res.json()) as { url: string; verifier: string; state: string };
+  const url = new URL(j.url);
+  assert.equal(url.origin, "https://auth.openai.com");
+  assert.equal(url.searchParams.get("code_challenge_method"), "S256");
+  assert.ok(j.verifier.length > 40);
+  assert.ok(j.state.length > 10);
 });
