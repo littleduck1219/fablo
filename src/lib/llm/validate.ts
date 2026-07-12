@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { normalizeEndpoint } from "./client";
+import { SERVER_CHATGPT_CREDENTIAL } from "./openai-oauth";
 
 export type ValidationResult = {
   ok: boolean;
@@ -12,6 +13,7 @@ export type ValidationResult = {
 /** 키 접두어로 프로바이더 오입력을 미리 잡아준다. */
 function keyMismatchHint(providerId: string, credential: string): string | null {
   const key = credential.trim();
+  if (providerId === "openai" && key === SERVER_CHATGPT_CREDENTIAL) return null;
   if (providerId !== "openrouter" && key.startsWith("sk-or-")) {
     return "OpenRouter에서 발급한 키(sk-or-…)입니다. 왼쪽 목록에서 OpenRouter를 선택해 연결하세요.";
   }
@@ -46,6 +48,21 @@ export async function validateConnection(
         return { ok: true };
       }
       case "openai": {
+        if (credential === SERVER_CHATGPT_CREDENTIAL) {
+          const res = await fetch("/api/openai/models", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ useServerToken: true }),
+          });
+          if (!res.ok) {
+            return { ok: false, error: "서버 ChatGPT 구독 토큰을 확인하지 못했습니다." };
+          }
+          const j = await res.json().catch(() => ({}));
+          const models = Array.isArray(j?.models)
+            ? j.models.map((m: { slug?: string }) => m?.slug).filter(Boolean)
+            : [];
+          return { ok: true, models };
+        }
         const res = await fetch("https://api.openai.com/v1/models", {
           headers: { authorization: `Bearer ${credential}` },
         });

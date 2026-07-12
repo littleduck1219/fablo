@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { CODEX_BASE_INSTRUCTIONS } from "./codex-instructions";
 import {
   isOAuthCredential,
+  isServerChatGptCredential,
   refreshIfNeeded,
   type ChatGptOAuth,
 } from "./openai-oauth";
@@ -26,7 +27,7 @@ export async function streamChat(params: StreamParams): Promise<void> {
     case "anthropic":
       return streamAnthropic(params);
     case "openai":
-      return isOAuthCredential(params.credential)
+      return isOAuthCredential(params.credential) || isServerChatGptCredential(params.credential)
         ? streamChatGptSubscription(params)
         : streamOpenAICompat(params, "https://api.openai.com/v1");
     case "openrouter":
@@ -45,11 +46,14 @@ export async function streamChat(params: StreamParams): Promise<void> {
 async function streamChatGptSubscription({
   model, credential, system, messages, signal, onText, onCredentialRefresh,
 }: StreamParams): Promise<void> {
-  let cred = JSON.parse(credential) as ChatGptOAuth;
-  const refreshed = await refreshIfNeeded(cred);
-  if (refreshed !== cred) {
-    cred = refreshed;
-    onCredentialRefresh?.(JSON.stringify(cred));
+  let cred: ChatGptOAuth | null = null;
+  if (!isServerChatGptCredential(credential)) {
+    cred = JSON.parse(credential) as ChatGptOAuth;
+    const refreshed = await refreshIfNeeded(cred);
+    if (refreshed !== cred) {
+      cred = refreshed;
+      onCredentialRefresh?.(JSON.stringify(cred));
+    }
   }
 
   // Codex 백엔드는 instructions가 공식 Codex 프롬프트가 아니면 400으로 거부한다.
@@ -86,8 +90,9 @@ async function streamChatGptSubscription({
     signal,
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      accessToken: cred.access_token,
-      accountId: cred.account_id,
+      ...(cred
+        ? { accessToken: cred.access_token, accountId: cred.account_id }
+        : { useServerToken: true }),
       payload,
     }),
   }).catch((err) => {

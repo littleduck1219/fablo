@@ -15,7 +15,9 @@ import {
   chooseChatGptModel,
   exchangeCode,
   fetchChatGptModels,
+  fetchServerChatGptModels,
   isOAuthCredential,
+  isServerChatGptCredential,
   loadPendingAuth,
   refreshIfNeeded,
   CHATGPT_MODELS,
@@ -108,6 +110,17 @@ export function AppShell() {
   /** Codex 백엔드 카탈로그에서 이 계정의 실제 모델 목록을 받아와 반영한다. */
   const refreshChatGptModels = useCallback(async (credential: string) => {
     try {
+      if (isServerChatGptCredential(credential)) {
+        const models = await fetchServerChatGptModels();
+        if (models.length === 0) return; // 실패 시 폴백 목록 유지
+        setProviders((ps) => ps.map((p) => (p.id === "openai" ? { ...p, models } : p)));
+        setActiveModel((am) =>
+          am?.providerId === "openai" && !models.includes(am.model)
+            ? { providerId: "openai", model: chooseChatGptModel(models, am.model) }
+            : am,
+        );
+        return;
+      }
       let cred = JSON.parse(credential) as ChatGptOAuth;
       const fresh = await refreshIfNeeded(cred);
       if (fresh !== cred) {
@@ -139,6 +152,8 @@ export function AppShell() {
         const s = JSON.parse(raw) as Partial<PersistedState>;
         const savedOpenai = s.providers?.find((p) => p.id === "openai");
         const openaiIsOAuth = !!savedOpenai?.credential && isOAuthCredential(savedOpenai.credential);
+        const openaiIsServer = !!savedOpenai?.credential && isServerChatGptCredential(savedOpenai.credential);
+        const openaiIsSubscription = openaiIsOAuth || openaiIsServer;
 
         if (Array.isArray(s.providers)) {
           // 카탈로그(모델 목록 등)는 최신 코드 기준, 연결 상태·키는 저장분 복원
@@ -153,7 +168,7 @@ export function AppShell() {
                 keyMask: saved.keyMask,
                 models:
                   // ChatGPT 구독은 항상 최신 Codex 모델 카탈로그로 교정 (과거 잘못된 목록 마이그레이션)
-                  base.id === "openai" && openaiIsOAuth
+                  base.id === "openai" && openaiIsSubscription
                     ? CHATGPT_MODELS
                     : // 연결 상태에서 동적으로 받아온 목록(Ollama)은 유지
                       saved.status === "connected" && saved.models?.length
@@ -166,13 +181,13 @@ export function AppShell() {
         if (s.activeModel !== undefined) {
           let am = s.activeModel ?? null;
           // 저장된 활성 모델이 구독 모드에서 허용되지 않는 모델이면 기본 Codex 모델로 교정
-          if (am?.providerId === "openai" && openaiIsOAuth && !CHATGPT_MODELS.includes(am.model)) {
+          if (am?.providerId === "openai" && openaiIsSubscription && !CHATGPT_MODELS.includes(am.model)) {
             am = { providerId: "openai", model: chooseChatGptModel(CHATGPT_MODELS, am.model) };
           }
           setActiveModel(am);
         }
         // 구독 연결이 살아 있으면 백엔드 카탈로그에서 실제 모델 목록을 백그라운드로 갱신
-        if (openaiIsOAuth && savedOpenai?.status === "connected" && savedOpenai.credential) {
+        if (openaiIsSubscription && savedOpenai?.status === "connected" && savedOpenai.credential) {
           void refreshChatGptModels(savedOpenai.credential);
         }
         if (Array.isArray(s.sessions) && s.sessions.length > 0) {
@@ -330,7 +345,9 @@ export function AppShell() {
               models: result.models?.length ? result.models : p.models,
               keyMask: p.local
                 ? undefined
-                : `${credential.slice(0, 7)}••••••••${credential.slice(-4)}`,
+                : isServerChatGptCredential(credential)
+                  ? "서버 ChatGPT 구독"
+                  : `${credential.slice(0, 7)}••••••••${credential.slice(-4)}`,
             }
           : p,
       ),

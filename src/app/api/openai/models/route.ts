@@ -1,15 +1,30 @@
+import { getServerChatGptToken } from "../../../../lib/llm/server-chatgpt.ts";
+
 /**
  * ChatGPT Codex 백엔드 모델 카탈로그 프록시.
  * Codex CLI와 동일하게 GET /backend-api/codex/models 에서 계정이 사용 가능한
  * 모델 슬러그 목록을 가져온다 (하드코딩 목록의 드리프트 방지).
  */
 export async function POST(request: Request): Promise<Response> {
-  let body: { accessToken?: string; accountId?: string };
+  let body: { accessToken?: string; accountId?: string; useServerToken?: boolean };
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: "invalid_request" }, { status: 400 });
   }
+
+  try {
+    if (body.useServerToken) {
+      const token = await getServerChatGptToken();
+      body = { accessToken: token.access_token, accountId: token.account_id };
+    }
+  } catch (err) {
+    return Response.json(
+      { error: err instanceof Error ? err.message : "server token error" },
+      { status: 503 },
+    );
+  }
+
   if (!body.accessToken || !body.accountId) {
     return Response.json({ error: "missing accessToken/accountId" }, { status: 400 });
   }

@@ -14,6 +14,7 @@
 const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"; // Codex CLI 공개 클라이언트
 const REDIRECT_URI = "http://localhost:1455/auth/callback";
 const AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize";
+export const SERVER_CHATGPT_CREDENTIAL = "server-chatgpt";
 
 /**
  * ChatGPT 구독 모델 폴백 목록 — 실제 목록은 연결 직후 백엔드 카탈로그
@@ -45,6 +46,23 @@ export async function fetchChatGptModels(cred: ChatGptOAuth): Promise<string[]> 
   return [...new Set(slugs)].slice(0, 10);
 }
 
+export async function fetchServerChatGptModels(): Promise<string[]> {
+  const res = await fetch("/api/openai/models", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ useServerToken: true }),
+  });
+  if (!res.ok) return [];
+  const j = (await res.json().catch(() => ({}))) as {
+    models?: { slug?: string; show_in_picker?: boolean }[];
+  };
+  if (!Array.isArray(j.models)) return [];
+  const slugs = j.models
+    .filter((m) => typeof m?.slug === "string" && m.show_in_picker !== false)
+    .map((m) => m.slug as string);
+  return [...new Set(slugs)].slice(0, 10);
+}
+
 export type ChatGptOAuth = {
   kind: "chatgpt-oauth";
   access_token: string;
@@ -62,6 +80,10 @@ export function isOAuthCredential(credential: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function isServerChatGptCredential(credential: string): boolean {
+  return credential === SERVER_CHATGPT_CREDENTIAL;
 }
 
 /* ---------- PKCE ---------- */

@@ -1,3 +1,5 @@
+import { getServerChatGptToken } from "../../../../lib/llm/server-chatgpt.ts";
+
 /**
  * ChatGPT Codex 백엔드(Responses API) 스트리밍 프록시.
  * 구독 OAuth 토큰으로 chatgpt.com/backend-api/codex/responses 를 호출하고
@@ -7,12 +9,25 @@ export async function POST(request: Request): Promise<Response> {
   let body: {
     accessToken?: string;
     accountId?: string;
+    useServerToken?: boolean;
     payload?: unknown;
   };
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: "invalid_request" }, { status: 400 });
+  }
+
+  try {
+    if (body.useServerToken) {
+      const token = await getServerChatGptToken();
+      body = { ...body, accessToken: token.access_token, accountId: token.account_id };
+    }
+  } catch (err) {
+    return Response.json(
+      { error: err instanceof Error ? err.message : "server token error" },
+      { status: 503 },
+    );
   }
 
   if (!body.accessToken || !body.accountId || !body.payload) {

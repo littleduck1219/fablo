@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { POST as createAuthRequest } from "../../app/api/openai/oauth/auth-request/route.ts";
+import { POST as listModels } from "../../app/api/openai/models/route.ts";
 import { chooseChatGptModel } from "./openai-oauth.ts";
 
 test("chooseChatGptModel replaces unsupported saved models with the first available model", () => {
@@ -26,4 +27,14 @@ test("server auth request creates a PKCE login URL", async () => {
   assert.equal(url.searchParams.get("code_challenge_method"), "S256");
   assert.ok(j.verifier.length > 40);
   assert.ok(j.state.length > 10);
+});
+
+test("server ChatGPT mode reports missing server token config", async () => {
+  const res = await listModels(
+    new Request("http://localhost/api/openai/models", {
+      method: "POST",
+      body: JSON.stringify({ useServerToken: true }),
+    }),
+  );
+  assert.equal(res.status, 503);
 });
