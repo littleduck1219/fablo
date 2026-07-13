@@ -4,6 +4,7 @@ import {
   extractQuestions,
   formatInterviewAnswers,
   generationProgress,
+  numberedQuestionTexts,
   sanitizeSpec,
   visibleText,
 } from "./parse.ts";
@@ -78,6 +79,11 @@ test("extractQuestions restores full numbered questions from legacy responses", 
     "완료 기준은 어디까지인가요?",
     "문서는 어떻게 저장할까요?",
   ]);
+});
+
+test("numberedQuestionTexts only restores a complete matching question set", () => {
+  assert.deepEqual(numberedQuestionTexts("1. 첫 질문?\n2. 둘째 질문?", 2), ["첫 질문?", "둘째 질문?"]);
+  assert.equal(numberedQuestionTexts("1. 첫 질문?", 2), null);
 });
 
 test("extractQuestions is null without a questions payload", () => {

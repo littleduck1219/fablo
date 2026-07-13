@@ -102,6 +102,12 @@ export type PrdPayload = {
 
 export type AskQuestion = { q: string; options: string[]; multi?: boolean };
 
+export function numberedQuestionTexts(text: string, count: number): string[] | null {
+  const questions = [...text.matchAll(/(?:^|\n)\s*\d+\.\s+([\s\S]*?)(?=\n\s*\d+\.\s+|$)/g)]
+    .map((match) => match[1].trim());
+  return questions.length === count ? questions : null;
+}
+
 export function formatInterviewAnswers(
   questions: AskQuestion[],
   picks: Record<string, string[]>,
@@ -137,9 +143,8 @@ export function extractQuestions(full: string): AskQuestion[] | null {
     if (qs.length === 0) return null;
 
     // 구버전 응답은 본문에 전체 질문, JSON에는 짧은 라벨만 넣었다.
-    const numbered = [...visibleText(full).matchAll(/(?:^|\n)\s*\d+\.\s+([\s\S]*?)(?=\n\s*\d+\.\s+|$)/g)]
-      .map((match) => match[1].trim());
-    return numbered.length === qs.length
+    const numbered = numberedQuestionTexts(visibleText(full), qs.length);
+    return numbered
       ? qs.map((question, index) => ({ ...question, q: numbered[index] }))
       : qs;
   } catch {

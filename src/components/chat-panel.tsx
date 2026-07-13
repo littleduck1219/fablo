@@ -12,7 +12,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { formatInterviewAnswers } from "@/lib/llm/parse";
+import { formatInterviewAnswers, numberedQuestionTexts } from "@/lib/llm/parse";
 import { SUGGESTIONS } from "@/lib/mock";
 import type { ActiveModel, Message } from "@/lib/types";
 
@@ -42,6 +42,11 @@ function MessageBubble({
   onExtraAnswer?: (answer: string) => void;
   onSubmitPicks?: () => void;
 }) {
+  const questionTexts = message.questions
+    ? numberedQuestionTexts(message.content, message.questions.length) ??
+      message.questions.map((question) => question.q)
+    : [];
+
   if (message.role === "user") {
     return (
       <div className="msg-in flex justify-end">
@@ -103,7 +108,7 @@ function MessageBubble({
             {message.questions.map((question, index) => (
               <div key={question.q}>
                 <div className="mb-1.5 text-[12px] font-medium leading-relaxed text-ink/90">
-                  {index + 1}. {question.q}
+                  {index + 1}. {questionTexts[index]}
                   {question.multi && <span className="ml-1 text-faint">· 복수 선택</span>}
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -160,7 +165,7 @@ function MessageBubble({
           <div className="flex flex-col gap-2 text-[12px] leading-relaxed text-ink/90">
             {message.questions.map((question, index) => (
               <div key={question.q}>
-                {index + 1}. {question.q}
+                {index + 1}. {questionTexts[index]}
               </div>
             ))}
           </div>
