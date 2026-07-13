@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { POST as createAuthRequest } from "../../app/api/openai/oauth/auth-request/route.ts";
 import { POST as listModels } from "../../app/api/openai/models/route.ts";
-import { chooseChatGptModel } from "./openai-oauth.ts";
+import { chooseChatGptModel, parseChatGptModelCatalog } from "./openai-oauth.ts";
 
 test("chooseChatGptModel replaces unsupported saved models with the first available model", () => {
   assert.equal(
@@ -15,6 +15,20 @@ test("chooseChatGptModel keeps a saved model when it is still available", () => 
   assert.equal(
     chooseChatGptModel(["gpt-5.5", "gpt-5.4"], "gpt-5.4"),
     "gpt-5.4",
+  );
+});
+
+test("model catalog keeps current user models and drops retired or internal entries", () => {
+  assert.deepEqual(
+    parseChatGptModelCatalog({
+      models: [
+        { slug: "gpt-5.6-sol" },
+        { slug: "gpt-5.1-codex-max" },
+        { slug: "codex-auto-review" },
+        { slug: "gpt-5.6-sol" },
+      ],
+    }),
+    ["gpt-5.6-sol"],
   );
 });
 

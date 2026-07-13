@@ -1,4 +1,5 @@
 import { getServerChatGptToken } from "../../../../lib/llm/server-chatgpt.ts";
+import codexPackage from "@openai/codex/package.json" with { type: "json" };
 
 /**
  * ChatGPT Codex 백엔드 모델 카탈로그 프록시.
@@ -30,7 +31,7 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const upstream = await fetch(
-    "https://chatgpt.com/backend-api/codex/models?client_version=0.55.0",
+    `https://chatgpt.com/backend-api/codex/models?client_version=${encodeURIComponent(codexPackage.version)}`,
     {
       headers: {
         authorization: `Bearer ${body.accessToken}`,

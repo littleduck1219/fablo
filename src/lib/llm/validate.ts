@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { normalizeEndpoint } from "./client";
-import { SERVER_CHATGPT_CREDENTIAL } from "./openai-oauth";
+import { parseChatGptModelCatalog, SERVER_CHATGPT_CREDENTIAL } from "./openai-oauth";
 
 export type ValidationResult = {
   ok: boolean;
@@ -57,11 +57,7 @@ export async function validateConnection(
           if (!res.ok) {
             return { ok: false, error: "서버 ChatGPT 구독 토큰을 확인하지 못했습니다." };
           }
-          const j = await res.json().catch(() => ({}));
-          const models = Array.isArray(j?.models)
-            ? j.models.map((m: { slug?: string }) => m?.slug).filter(Boolean)
-            : [];
-          return { ok: true, models };
+          return { ok: true, models: parseChatGptModelCatalog(await res.json().catch(() => ({}))) };
         }
         const res = await fetch("https://api.openai.com/v1/models", {
           headers: { authorization: `Bearer ${credential}` },

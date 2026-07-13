@@ -21,11 +21,21 @@ export const SERVER_CHATGPT_CREDENTIAL = "server-chatgpt";
  * (fetchChatGptModels)에서 가져와 대체된다. Codex 백엔드는 카탈로그에 있는
  * codex 계열 모델만 허용한다.
  */
-export const CHATGPT_MODELS = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"];
+export const CHATGPT_MODELS = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"];
 
 export function chooseChatGptModel(models: string[], current?: string | null): string {
   if (current && models.includes(current)) return current;
   return models[0] ?? CHATGPT_MODELS[0];
+}
+
+export function parseChatGptModelCatalog(value: unknown): string[] {
+  const models = (value as { models?: { slug?: string; show_in_picker?: boolean }[] })?.models;
+  if (!Array.isArray(models)) return [];
+  const slugs = models
+    .filter((m) => m.show_in_picker !== false && typeof m.slug === "string")
+    .map((m) => m.slug as string)
+    .filter((slug) => slug.startsWith("gpt-") && !slug.startsWith("gpt-5.1"));
+  return [...new Set(slugs)].slice(0, 10);
 }
 
 /** Codex 백엔드에서 이 계정이 사용 가능한 모델 슬러그 목록을 가져온다. */
@@ -36,14 +46,7 @@ export async function fetchChatGptModels(cred: ChatGptOAuth): Promise<string[]> 
     body: JSON.stringify({ accessToken: cred.access_token, accountId: cred.account_id }),
   });
   if (!res.ok) return [];
-  const j = (await res.json().catch(() => ({}))) as {
-    models?: { slug?: string; show_in_picker?: boolean }[];
-  };
-  if (!Array.isArray(j.models)) return [];
-  const slugs = j.models
-    .filter((m) => typeof m?.slug === "string" && m.show_in_picker !== false)
-    .map((m) => m.slug as string);
-  return [...new Set(slugs)].slice(0, 10);
+  return parseChatGptModelCatalog(await res.json().catch(() => ({})));
 }
 
 export async function fetchServerChatGptModels(): Promise<string[]> {
@@ -53,14 +56,7 @@ export async function fetchServerChatGptModels(): Promise<string[]> {
     body: JSON.stringify({ useServerToken: true }),
   });
   if (!res.ok) return [];
-  const j = (await res.json().catch(() => ({}))) as {
-    models?: { slug?: string; show_in_picker?: boolean }[];
-  };
-  if (!Array.isArray(j.models)) return [];
-  const slugs = j.models
-    .filter((m) => typeof m?.slug === "string" && m.show_in_picker !== false)
-    .map((m) => m.slug as string);
-  return [...new Set(slugs)].slice(0, 10);
+  return parseChatGptModelCatalog(await res.json().catch(() => ({})));
 }
 
 export type ChatGptOAuth = {

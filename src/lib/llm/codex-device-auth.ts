@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { getFabloCodexHome, resetServerChatGptTokenCache } from "./server-chatgpt";
 
@@ -32,9 +33,10 @@ class CodexDeviceAuthServer {
   constructor() {
     const codexHome = getFabloCodexHome();
     mkdirSync(codexHome, { recursive: true, mode: 0o700 });
+    const codexScript = join(process.cwd(), "node_modules", "@openai", "codex", "bin", "codex.js");
     this.child = spawn(
-      "codex",
-      ["app-server", "--stdio", "-c", 'cli_auth_credentials_store="file"'],
+      process.execPath,
+      [codexScript, "app-server", "--stdio", "-c", 'cli_auth_credentials_store="file"'],
       { env: { ...process.env, CODEX_HOME: codexHome }, stdio: ["pipe", "pipe", "pipe"] },
     );
 
@@ -42,15 +44,17 @@ class CodexDeviceAuthServer {
     this.child.stderr.on("data", (chunk) => {
       this.stderr = `${this.stderr}${String(chunk)}`.slice(-2000);
     });
-    this.child.on("exit", () => {
+    const stop = (cause?: Error) => {
       this.stopped = true;
-      const error = new Error(this.stderr.trim() || "Codex app-server가 종료되었습니다.");
+      const error = cause ?? new Error(this.stderr.trim() || "Codex app-server가 종료되었습니다.");
       for (const request of this.pending.values()) {
         clearTimeout(request.timer);
         request.reject(error);
       }
       this.pending.clear();
-    });
+    };
+    this.child.once("error", stop);
+    this.child.once("exit", () => stop());
 
     this.ready = this.requestRaw("initialize", {
       clientInfo: { name: "fablo", title: "Fablo", version: "0.1.0" },

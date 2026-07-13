@@ -14,7 +14,7 @@ export const INITIAL_PROVIDERS: Provider[] = [
   {
     id: "openai",
     name: "OpenAI",
-    models: ["gpt-5.1", "gpt-5.1-mini", "gpt-4.1"],
+    models: ["gpt-5.6", "gpt-5.6-terra", "gpt-5.6-luna"],
     status: "disconnected",
   },
   {
