@@ -28,13 +28,17 @@ type ChatPanelProps = {
 function MessageBubble({
   message,
   picks,
+  answers,
   onTogglePick,
+  onAnswer,
   onSubmitPicks,
 }: {
   message: Message;
   /** 인터뷰 선택 상태 — 질문 라벨 → 선택한 옵션들 (마지막 메시지에서만 전달됨) */
   picks?: Record<string, string[]>;
+  answers?: Record<string, string>;
   onTogglePick?: (q: string, option: string) => void;
+  onAnswer?: (q: string, answer: string) => void;
   onSubmitPicks?: () => void;
 }) {
   if (message.role === "user") {
@@ -85,7 +89,7 @@ function MessageBubble({
             </div>
           </div>
         )}
-        {message.questions && picks && onTogglePick && onSubmitPicks && (
+        {message.questions && picks && answers && onTogglePick && onAnswer && onSubmitPicks && (
           <div className="mt-2.5 flex flex-col gap-2.5 rounded-lg border border-line bg-panel2/60 p-3">
             {message.questions.map((question) => (
               <div key={question.q}>
@@ -113,17 +117,25 @@ function MessageBubble({
                       </button>
                     );
                   })}
+                  <input
+                    value={answers[question.q] ?? ""}
+                    onChange={(e) => onAnswer(question.q, e.target.value)}
+                    placeholder="선택지에 없다면 직접 입력하세요"
+                    aria-label={`${question.q} 직접 입력`}
+                    className="w-full rounded-md border border-line bg-panel px-3 py-2 text-[11.5px] text-ink
+                      placeholder:text-faint focus:border-accent/60 focus:outline-none"
+                  />
                 </div>
               </div>
             ))}
             <div className="mt-0.5 flex items-center justify-between">
-              <span className="text-[10.5px] text-faint">
-                선택지에 없는 답은 아래 입력창에 쓰세요
-              </span>
+              <span className="text-[10.5px] text-faint">질문별로 선택하거나 직접 입력하세요</span>
               <button
                 type="button"
                 onClick={onSubmitPicks}
-                disabled={Object.keys(picks).length === 0}
+                disabled={
+                  Object.keys(picks).length === 0 && !Object.values(answers).some((x) => x.trim())
+                }
                 className="rounded-md bg-accent px-3 py-1.5 text-[11.5px] font-medium text-[#1a1204]
                   transition-all hover:bg-accentstrong disabled:opacity-30
                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
@@ -184,11 +196,12 @@ export function ChatPanel({
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const atBottomRef = useRef(true);
 
-  // 새 메시지·스트리밍 시 맨 아래로 스크롤
+  // 사용자가 위로 올려 읽는 동안에는 스트리밍이 스크롤을 빼앗지 않는다.
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && atBottomRef.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   const submit = () => {
@@ -202,9 +215,13 @@ export function ChatPanel({
   /* 인터뷰 선택 — 채팅 안에서 선택하고 바로 전송. 같은 옵션 재클릭은 해제.
    * multi 질문은 여러 개 누적, 단일 질문은 교체. */
   const [picks, setPicks] = useState<Record<string, string[]>>({});
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   const lastMessage = messages[messages.length - 1];
   const lastId = lastMessage?.id;
-  useEffect(() => setPicks({}), [lastId]);
+  useEffect(() => {
+    setPicks({});
+    setAnswers({});
+  }, [lastId]);
 
   const togglePick = (q: string, option: string) => {
     const multi = lastMessage?.questions?.find((x) => x.q === q)?.multi ?? false;
@@ -223,9 +240,10 @@ export function ChatPanel({
 
   const submitPicks = () => {
     if (streaming || !activeModel || !lastMessage?.questions) return;
-    const lines = lastMessage.questions
-      .filter((question) => picks[question.q]?.length)
-      .map((question) => `${question.q}: ${picks[question.q].join(", ")}`);
+    const lines = lastMessage.questions.flatMap((question) => {
+      const values = [...(picks[question.q] ?? []), answers[question.q]?.trim()].filter(Boolean);
+      return values.length ? [`${question.q}: ${values.join(", ")}`] : [];
+    });
     if (lines.length === 0) return;
     onSend(lines.join("\n"));
     // 초기화는 하지 않는다 — 전송이 성공하면 메시지가 추가되며 lastId 이펙트가 비우고,
@@ -257,7 +275,14 @@ export function ChatPanel({
       </header>
 
       {/* Messages */}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32;
+        }}
+        className="min-h-0 flex-1 overflow-y-auto"
+      >
         {messages.length === 0 ? (
           <EmptyState onPick={(p) => (activeModel ? onSend(p) : onOpenModelDialog())} />
         ) : (
@@ -270,7 +295,13 @@ export function ChatPanel({
                   key={m.id}
                   message={m}
                   picks={interactive ? picks : undefined}
+                  answers={interactive ? answers : undefined}
                   onTogglePick={interactive ? togglePick : undefined}
+                  onAnswer={
+                    interactive
+                      ? (q, answer) => setAnswers((prev) => ({ ...prev, [q]: answer }))
+                      : undefined
+                  }
                   onSubmitPicks={interactive ? submitPicks : undefined}
                 />
               );
