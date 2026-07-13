@@ -15,7 +15,7 @@ Fablo는 정해진 질문지를 채우는 대신 제품 고유의 불확실성�
 - 다중 문서 보관함, 버전 히스토리, PRD 템플릿
 - Markdown 복사·내보내기와 JSON 백업·복원
 - Anthropic, OpenAI, Google Gemini, OpenRouter, Ollama 연결
-- ChatGPT 구독 OAuth 및 Codex 인증 파일 연결
+- ChatGPT 구독 디바이스 연결 및 Codex 인증 파일 연결
 
 ## 실행
 
@@ -45,7 +45,8 @@ npm run dev
 
 - 대화, 문서, 설정, API 자격 증명은 브라우저 `localStorage`의 `fablo:v1`에 저장됩니다.
 - Anthropic, OpenAI API, Gemini, OpenRouter, Ollama 요청은 브라우저에서 각 제공자로 직접 전송됩니다.
-- ChatGPT 구독 연결은 CORS 처리를 위해 무상태 Next.js 프록시를 사용하며 토큰을 서버에 저장하지 않습니다.
+- 기존 브라우저 OAuth 연결은 CORS 처리를 위해 무상태 Next.js 프록시를 사용합니다.
+- 디바이스 연결 자격 증명은 Codex CLI가 `~/.fablo/codex`에 저장하고 자동 갱신합니다.
 - JSON 백업에는 API 자격 증명이 포함될 수 있으므로 안전하게 보관하세요.
 - 공용 컴퓨터나 신뢰할 수 없는 배포 환경에서는 자격 증명을 저장하지 마세요.
 

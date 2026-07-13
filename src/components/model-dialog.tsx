@@ -3,14 +3,12 @@
 import { Cable, Check, ExternalLink, Loader2, Unplug, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
-  createAuthRequest,
-  exchangeCode,
-  parseCallback,
   parseCodexAuthJson,
-  savePendingAuth,
+  getDeviceAuthStatus,
+  startDeviceAuth,
   CHATGPT_MODELS,
   SERVER_CHATGPT_CREDENTIAL,
-  type AuthRequest,
+  type DeviceAuthRequest,
 } from "@/lib/llm/openai-oauth";
 import type { ActiveModel, Provider } from "@/lib/types";
 
@@ -48,21 +46,14 @@ export function ModelDialog({
 
   // OpenAI 인증 방식: API 키 ↔ ChatGPT 구독 로그인
   const [authMode, setAuthMode] = useState<"key" | "chatgpt">("key");
-  const [oauthReq, setOauthReq] = useState<AuthRequest | null>(null);
-  const [callbackUrl, setCallbackUrl] = useState("");
+  const [deviceReq, setDeviceReq] = useState<DeviceAuthRequest | null>(null);
   const [oauthBusy, setOauthBusy] = useState(false);
   const [oauthError, setOauthError] = useState<string | null>(null);
   const [importText, setImportText] = useState("");
 
   const selected = providers.find((p) => p.id === selectedId) ?? providers[0];
-  const remoteChatGptOAuth =
-    typeof window !== "undefined" &&
-    window.location.protocol === "http:" &&
-    !["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
-
   const resetOAuth = () => {
-    setOauthReq(null);
-    setCallbackUrl("");
+    setDeviceReq(null);
     setOauthBusy(false);
     setOauthError(null);
     setImportText("");
@@ -90,6 +81,41 @@ export function ModelDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  useEffect(() => {
+    if (!open || !deviceReq) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const result = await getDeviceAuthStatus(deviceReq.loginId);
+        if (!active) return;
+        if (result.status === "complete") {
+          setDeviceReq(null);
+          setOauthBusy(false);
+          onConnect("openai", SERVER_CHATGPT_CREDENTIAL);
+          return;
+        }
+        if (result.status === "error" || result.status === "cancelled") {
+          setDeviceReq(null);
+          setOauthBusy(false);
+          setOauthError(result.error || "로그인이 완료되지 않았습니다.");
+          return;
+        }
+        timer = setTimeout(poll, 1500);
+      } catch (error) {
+        if (!active) return;
+        setDeviceReq(null);
+        setOauthBusy(false);
+        setOauthError(error instanceof Error ? error.message : "로그인 상태를 확인하지 못했습니다.");
+      }
+    };
+    timer = setTimeout(poll, 1000);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [deviceReq, onConnect, open]);
+
   if (!open || !selected) return null;
 
   const canConnect = selected.local
@@ -98,48 +124,11 @@ export function ModelDialog({
 
   const startChatGptLogin = async () => {
     setOauthError(null);
-    try {
-      const req = await createAuthRequest();
-      setOauthReq(req);
-      savePendingAuth(req); // 콜백 리스너가 리디렉션해 오면 다른 탭에서도 완료할 수 있도록
-      window.open(req.url, "_blank", "noopener");
-    } catch {
-      setOauthError("로그인 URL 생성에 실패했습니다.");
-    }
-  };
-
-  const completeChatGptLogin = async () => {
-    if (!oauthReq) return;
     setOauthBusy(true);
-    setOauthError(null);
     try {
-      const code = parseCallback(callbackUrl, oauthReq.state);
-      const cred = await exchangeCode(code, oauthReq.verifier);
-      const label = cred.email ? `ChatGPT 구독 · ${cred.email}` : "ChatGPT 구독";
-      onOAuthConnected(selected.id, JSON.stringify(cred), label, CHATGPT_MODELS);
-      resetOAuth();
+      setDeviceReq(await startDeviceAuth());
     } catch (err) {
-      setOauthError(err instanceof Error ? err.message : "로그인에 실패했습니다.");
-    } finally {
-      setOauthBusy(false);
-    }
-  };
-
-  const completeChatGptLoginFromClipboard = async () => {
-    setOauthError(null);
-    try {
-      const text = await navigator.clipboard.readText();
-      setCallbackUrl(text);
-      if (!oauthReq) return;
-      setOauthBusy(true);
-      const code = parseCallback(text, oauthReq.state);
-      const cred = await exchangeCode(code, oauthReq.verifier);
-      const label = cred.email ? `ChatGPT 구독 · ${cred.email}` : "ChatGPT 구독";
-      onOAuthConnected(selected.id, JSON.stringify(cred), label, CHATGPT_MODELS);
-      resetOAuth();
-    } catch (err) {
-      setOauthError(err instanceof Error ? err.message : "클립보드에서 로그인 URL을 읽지 못했습니다.");
-    } finally {
+      setOauthError(err instanceof Error ? err.message : "디바이스 로그인을 시작하지 못했습니다.");
       setOauthBusy(false);
     }
   };
@@ -326,106 +315,65 @@ export function ModelDialog({
                 )}
 
                 {selected.id === "openai" && authMode === "chatgpt" ? (
-                  /* ---------- ChatGPT 구독 OAuth ---------- */
+                  /* ---------- ChatGPT 구독 디바이스 연결 ---------- */
                   <div className="flex flex-1 flex-col gap-3">
                     <p className="text-[12px] leading-relaxed text-muted">
                       ChatGPT Plus/Pro 구독으로 로그인합니다. API 키 없이 구독 요금제의
                       사용량으로 모델을 호출해요.
-                      {remoteChatGptOAuth &&
-                        " 원격 HTTP 접속에서는 로그인 후 localhost 콜백 화면의 URL을 붙여넣어 연결합니다."}
                     </p>
 
-                    {!oauthReq ? (
+                    {!deviceReq ? (
                       <div className="flex flex-col gap-2">
                         <button
                           type="button"
-                          onClick={() => onConnect(selected.id, SERVER_CHATGPT_CREDENTIAL)}
+                          disabled={oauthBusy}
+                          onClick={startChatGptLogin}
                           className="flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-[12.5px] font-semibold text-[#1a1204]
-                            transition-colors hover:bg-accentstrong
+                            transition-colors hover:bg-accentstrong disabled:opacity-40
                             focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
                         >
-                          <Cable size={13} />
-                          서버 ChatGPT 구독 사용
+                          {oauthBusy ? <Loader2 size={13} className="animate-spin" /> : <Cable size={13} />}
+                          디바이스로 연결
                         </button>
                         <button
                           type="button"
-                          onClick={startChatGptLogin}
+                          onClick={() => onConnect(selected.id, SERVER_CHATGPT_CREDENTIAL)}
                           className="flex items-center justify-center gap-2 rounded-lg border border-line px-4 py-2.5 text-[12.5px] font-medium text-muted
                             transition-colors hover:border-linestrong hover:text-ink
                             focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
                         >
-                          <ExternalLink size={13} />
-                          이 브라우저에서 로그인
+                          <Cable size={13} />
+                          저장된 서버 로그인 사용
                         </button>
                       </div>
                     ) : (
                       <>
-                        <ol className="flex flex-col gap-1.5 rounded-lg border border-line bg-panel px-3.5 py-3 text-[11.5px] leading-relaxed text-muted">
-                          <li>1. 새 탭에서 OpenAI 로그인을 완료하세요.</li>
-                          {remoteChatGptOAuth ? (
-                            <>
-                              <li>
-                                2. <b className="text-ink/80">사이트에 연결할 수 없음</b> 화면이
-                                뜨면 정상입니다.
-                              </li>
-                              <li>3. 그 탭의 주소창 URL 전체를 복사해 아래에 붙여넣으세요.</li>
-                            </>
-                          ) : (
-                            <>
-                              <li>
-                                2. <span className="font-mono text-[10.5px]">localhost:1455</span>{" "}
-                                페이지가 <b className="text-ink/80">열리지 않는 것이 정상</b>입니다.
-                              </li>
-                              <li>3. 그 탭의 주소창 URL 전체를 복사해 아래에 붙여넣으세요.</li>
-                            </>
-                          )}
-                        </ol>
-                        <input
-                          type="text"
-                          value={callbackUrl}
-                          onChange={(e) => setCallbackUrl(e.target.value)}
-                          placeholder="http://localhost:1455/auth/callback?code=…"
-                          spellCheck={false}
-                          className="w-full rounded-lg border border-line bg-panel px-3 py-2 font-mono text-[11.5px] text-ink
-                            placeholder:text-faint/70 focus:border-accent/60 focus:outline-none"
-                        />
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            disabled={oauthBusy}
-                            onClick={completeChatGptLoginFromClipboard}
-                            className="flex items-center gap-1.5 rounded-lg border border-line px-3 py-2 text-[12px] font-medium text-muted
-                              transition-colors hover:border-linestrong hover:text-ink disabled:cursor-not-allowed disabled:opacity-40
-                              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                        <div className="rounded-lg border border-line bg-panel px-4 py-4 text-center">
+                          <div className="text-[11px] text-faint">OpenAI 페이지에서 입력할 코드</div>
+                          <div className="my-2 font-mono text-[24px] font-bold tracking-[0.18em] text-accentstrong">
+                            {deviceReq.userCode}
+                          </div>
+                          <a
+                            href={deviceReq.verificationUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-[12px] font-medium text-accent hover:text-accentstrong"
                           >
-                            클립보드에서 연결
-                          </button>
-                          <button
-                            type="button"
-                            disabled={!callbackUrl.trim() || oauthBusy}
-                            onClick={completeChatGptLogin}
-                            className="flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-[12px] font-semibold text-[#1a1204]
-                              transition-colors hover:bg-accentstrong disabled:cursor-not-allowed disabled:opacity-40
-                              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                          >
-                            {oauthBusy ? (
-                              <>
-                                <Loader2 size={13} className="animate-spin" /> 연결 중…
-                              </>
-                            ) : (
-                              <>
-                                <Cable size={13} /> 연결 완료
-                              </>
-                            )}
-                          </button>
+                            <ExternalLink size={12} /> OpenAI 디바이스 연결 열기
+                          </a>
+                        </div>
+                        <div className="flex items-center justify-center gap-2 text-[12px] text-muted">
+                          <Loader2 size={13} className="animate-spin text-accent" /> 승인 대기 중…
+                        </div>
+                        <div className="flex justify-center">
                           <button
                             type="button"
                             onClick={startChatGptLogin}
-                            className="rounded-lg border border-line px-3 py-2 text-[12px] text-muted transition-colors
-                              hover:border-linestrong hover:text-ink
+                            className="flex items-center gap-1.5 rounded-lg border border-line px-3 py-2 text-[12px] font-medium text-muted
+                              transition-colors hover:border-linestrong hover:text-ink
                               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
                           >
-                            로그인 다시 열기
+                            새 코드 발급
                           </button>
                         </div>
                       </>

@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * ChatGPT 구독(Plus/Pro) OAuth 로그인 — OpenAI Codex CLI의 공개 OAuth 클라이언트와
- * 동일한 PKCE 흐름을 사용한다 (opencode 등 외부 에이전트들이 쓰는 방식).
+ * ChatGPT 구독(Plus/Pro) 연결 클라이언트. 기본 로그인은 Codex App Server의
+ * 디바이스 코드 흐름이며, 아래 PKCE 구현은 기존 브라우저 세션 호환용으로 유지한다.
  *
  * 흐름:
  * 1. PKCE 생성 → auth.openai.com 로그인 창 열기
@@ -95,6 +95,31 @@ function base64url(bytes: Uint8Array): string {
 }
 
 export type AuthRequest = { url: string; verifier: string; state: string };
+
+export type DeviceAuthRequest = {
+  loginId: string;
+  verificationUrl: string;
+  userCode: string;
+};
+
+export type DeviceAuthStatus = {
+  status: "pending" | "complete" | "error" | "cancelled";
+  error?: string;
+};
+
+export async function startDeviceAuth(): Promise<DeviceAuthRequest> {
+  const res = await fetch("/api/openai/oauth/device", { method: "POST" });
+  const body = (await res.json().catch(() => ({}))) as DeviceAuthRequest & { error?: string };
+  if (!res.ok) throw new Error(body.error || "디바이스 로그인을 시작하지 못했습니다.");
+  return body;
+}
+
+export async function getDeviceAuthStatus(loginId: string): Promise<DeviceAuthStatus> {
+  const res = await fetch(`/api/openai/oauth/device?loginId=${encodeURIComponent(loginId)}`);
+  const body = (await res.json().catch(() => ({}))) as DeviceAuthStatus & { error?: string };
+  if (!res.ok) throw new Error(body.error || "로그인 상태를 확인하지 못했습니다.");
+  return body;
+}
 
 /* ---------- 진행 중인 로그인 상태 (탭 간 공유를 위해 localStorage 사용) ---------- */
 

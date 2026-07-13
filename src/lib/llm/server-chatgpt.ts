@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 
@@ -11,6 +13,14 @@ export type ServerChatGptToken = {
 
 let cached: ServerChatGptToken | null = null;
 
+export function getFabloCodexHome(): string {
+  return process.env.FABLO_CODEX_HOME ?? join(homedir(), ".fablo", "codex");
+}
+
+export function resetServerChatGptTokenCache(): void {
+  cached = null;
+}
+
 function decodeJwtPayload(jwt: string): Record<string, unknown> {
   try {
     return JSON.parse(Buffer.from(jwt.split(".")[1], "base64url").toString("utf8"));
@@ -22,10 +32,10 @@ function decodeJwtPayload(jwt: string): Record<string, unknown> {
 function parseServerToken(): ServerChatGptToken {
   const raw =
     process.env.FABLO_CHATGPT_AUTH_JSON ??
-    (process.env.FABLO_CHATGPT_AUTH_FILE
-      ? readFileSync(process.env.FABLO_CHATGPT_AUTH_FILE, "utf8")
-      : "");
-  if (!raw) throw new Error("Set FABLO_CHATGPT_AUTH_JSON or FABLO_CHATGPT_AUTH_FILE");
+    readFileSync(
+      process.env.FABLO_CHATGPT_AUTH_FILE ?? join(getFabloCodexHome(), "auth.json"),
+      "utf8",
+    );
 
   const j = JSON.parse(raw) as Record<string, unknown>;
   const t = (j.tokens ?? j) as Record<string, unknown>;
