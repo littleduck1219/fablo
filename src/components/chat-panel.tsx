@@ -12,6 +12,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { formatInterviewAnswers } from "@/lib/llm/parse";
 import { SUGGESTIONS } from "@/lib/mock";
 import type { ActiveModel, Message } from "@/lib/types";
 
@@ -28,17 +29,17 @@ type ChatPanelProps = {
 function MessageBubble({
   message,
   picks,
-  answers,
+  extraAnswer,
   onTogglePick,
-  onAnswer,
+  onExtraAnswer,
   onSubmitPicks,
 }: {
   message: Message;
   /** 인터뷰 선택 상태 — 질문 라벨 → 선택한 옵션들 (마지막 메시지에서만 전달됨) */
   picks?: Record<string, string[]>;
-  answers?: Record<string, string>;
+  extraAnswer?: string;
   onTogglePick?: (q: string, option: string) => void;
-  onAnswer?: (q: string, answer: string) => void;
+  onExtraAnswer?: (answer: string) => void;
   onSubmitPicks?: () => void;
 }) {
   if (message.role === "user") {
@@ -68,13 +69,15 @@ function MessageBubble({
         <Sparkles size={12} className="text-accent" />
       </div>
       <div className="min-w-0 flex-1 pt-0.5">
-        <div
-          className={`whitespace-pre-wrap text-[13px] leading-relaxed text-ink/90 ${
-            message.pending && !message.progress ? "stream-caret" : ""
-          }`}
-        >
-          {message.content}
-        </div>
+        {!message.questions && (
+          <div
+            className={`whitespace-pre-wrap text-[13px] leading-relaxed text-ink/90 ${
+              message.pending && !message.progress ? "stream-caret" : ""
+            }`}
+          >
+            {message.content}
+          </div>
+        )}
         {message.progress && (
           <div className="mt-2.5 flex flex-col gap-1.5 rounded-lg border border-line bg-panel2 px-3 py-2.5">
             {message.progress.done.map((label) => (
@@ -89,12 +92,18 @@ function MessageBubble({
             </div>
           </div>
         )}
-        {message.questions && picks && answers && onTogglePick && onAnswer && onSubmitPicks && (
+        {message.questions &&
+        picks &&
+        extraAnswer !== undefined &&
+        onTogglePick &&
+        onExtraAnswer &&
+        onSubmitPicks ? (
           <div className="mt-2.5 flex flex-col gap-2.5 rounded-lg border border-line bg-panel2/60 p-3">
-            {message.questions.map((question) => (
+            <div className="text-[12px] font-medium text-ink">하나씩 답해 주세요</div>
+            {message.questions.map((question, index) => (
               <div key={question.q}>
-                <div className="mb-1 text-[11px] font-medium text-muted">
-                  {question.q}
+                <div className="mb-1.5 text-[12px] font-medium leading-relaxed text-ink/90">
+                  {index + 1}. {question.q}
                   {question.multi && <span className="ml-1 text-faint">· 복수 선택</span>}
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -117,25 +126,27 @@ function MessageBubble({
                       </button>
                     );
                   })}
-                  <input
-                    value={answers[question.q] ?? ""}
-                    onChange={(e) => onAnswer(question.q, e.target.value)}
-                    placeholder="선택지에 없다면 직접 입력하세요"
-                    aria-label={`${question.q} 직접 입력`}
-                    className="w-full rounded-md border border-line bg-panel px-3 py-2 text-[11.5px] text-ink
-                      placeholder:text-faint focus:border-accent/60 focus:outline-none"
-                  />
                 </div>
               </div>
             ))}
+            <label className="mt-0.5 text-[11px] font-medium text-muted" htmlFor={`extra-${message.id}`}>
+              추가 요구사항
+            </label>
+            <textarea
+              id={`extra-${message.id}`}
+              rows={2}
+              value={extraAnswer}
+              onChange={(e) => onExtraAnswer(e.target.value)}
+              placeholder="선택지에 없거나 덧붙일 내용을 입력하세요"
+              className="w-full resize-none rounded-md border border-line bg-panel px-3 py-2 text-[11.5px] leading-relaxed text-ink
+                placeholder:text-faint focus:border-accent/60 focus:outline-none"
+            />
             <div className="mt-0.5 flex items-center justify-between">
-              <span className="text-[10.5px] text-faint">질문별로 선택하거나 직접 입력하세요</span>
+              <span className="text-[10.5px] text-faint">답하지 않은 항목은 합리적인 가정으로 채웁니다</span>
               <button
                 type="button"
                 onClick={onSubmitPicks}
-                disabled={
-                  Object.keys(picks).length === 0 && !Object.values(answers).some((x) => x.trim())
-                }
+                disabled={Object.keys(picks).length === 0 && !extraAnswer.trim()}
                 className="rounded-md bg-accent px-3 py-1.5 text-[11.5px] font-medium text-[#1a1204]
                   transition-all hover:bg-accentstrong disabled:opacity-30
                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
@@ -145,7 +156,15 @@ function MessageBubble({
               </button>
             </div>
           </div>
-        )}
+        ) : message.questions ? (
+          <div className="flex flex-col gap-2 text-[12px] leading-relaxed text-ink/90">
+            {message.questions.map((question, index) => (
+              <div key={question.q}>
+                {index + 1}. {question.q}
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -214,40 +233,40 @@ export function ChatPanel({
 
   /* 인터뷰 선택 — 채팅 안에서 선택하고 바로 전송. 같은 옵션 재클릭은 해제.
    * multi 질문은 여러 개 누적, 단일 질문은 교체. */
-  const [picks, setPicks] = useState<Record<string, string[]>>({});
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [draft, setDraft] = useState<{
+    messageId: string;
+    picks: Record<string, string[]>;
+    extra: string;
+  }>({ messageId: "", picks: {}, extra: "" });
   const lastMessage = messages[messages.length - 1];
-  const lastId = lastMessage?.id;
-  useEffect(() => {
-    setPicks({});
-    setAnswers({});
-  }, [lastId]);
+  const lastId = lastMessage?.id ?? "";
+  const currentDraft =
+    draft.messageId === lastId ? draft : { messageId: lastId, picks: {}, extra: "" };
+  const { picks, extra: extraAnswer } = currentDraft;
 
   const togglePick = (q: string, option: string) => {
     const multi = lastMessage?.questions?.find((x) => x.q === q)?.multi ?? false;
-    setPicks((prev) => {
-      const cur = prev[q] ?? [];
+    setDraft((previous) => {
+      const active = previous.messageId === lastId ? previous : currentDraft;
+      const cur = active.picks[q] ?? [];
       let next: string[];
       if (cur.includes(option)) next = cur.filter((o) => o !== option);
       else next = multi ? [...cur, option] : [option];
       if (next.length === 0) {
-        const { [q]: _removed, ...rest } = prev;
-        return rest;
+        const picks = { ...active.picks };
+        delete picks[q];
+        return { ...active, picks };
       }
-      return { ...prev, [q]: next };
+      return { ...active, picks: { ...active.picks, [q]: next } };
     });
   };
 
   const submitPicks = () => {
     if (streaming || !activeModel || !lastMessage?.questions) return;
-    const lines = lastMessage.questions.flatMap((question) => {
-      const values = [...(picks[question.q] ?? []), answers[question.q]?.trim()].filter(Boolean);
-      return values.length ? [`${question.q}: ${values.join(", ")}`] : [];
-    });
-    if (lines.length === 0) return;
-    onSend(lines.join("\n"));
-    // 초기화는 하지 않는다 — 전송이 성공하면 메시지가 추가되며 lastId 이펙트가 비우고,
-    // 실패(모델 미연결 등)하면 선택이 보존된다
+    const answer = formatInterviewAnswers(lastMessage.questions, picks, extraAnswer);
+    if (!answer) return;
+    onSend(answer);
+    // 메시지가 바뀌면 messageId가 다른 draft는 자동으로 무시한다.
   };
 
   return (
@@ -295,11 +314,11 @@ export function ChatPanel({
                   key={m.id}
                   message={m}
                   picks={interactive ? picks : undefined}
-                  answers={interactive ? answers : undefined}
+                  extraAnswer={interactive ? extraAnswer : undefined}
                   onTogglePick={interactive ? togglePick : undefined}
-                  onAnswer={
+                  onExtraAnswer={
                     interactive
-                      ? (q, answer) => setAnswers((prev) => ({ ...prev, [q]: answer }))
+                      ? (extra) => setDraft({ ...currentDraft, extra })
                       : undefined
                   }
                   onSubmitPicks={interactive ? submitPicks : undefined}

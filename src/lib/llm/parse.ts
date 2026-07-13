@@ -102,6 +102,18 @@ export type PrdPayload = {
 
 export type AskQuestion = { q: string; options: string[]; multi?: boolean };
 
+export function formatInterviewAnswers(
+  questions: AskQuestion[],
+  picks: Record<string, string[]>,
+  extra: string,
+): string {
+  const lines = questions.flatMap((question) =>
+    picks[question.q]?.length ? [`${question.q}: ${picks[question.q].join(", ")}`] : [],
+  );
+  if (extra.trim()) lines.push(`추가 요구사항: ${extra.trim()}`);
+  return lines.join("\n");
+}
+
 /** 인터뷰 질문 턴의 선택지 페이로드를 추출한다. 없거나 손상되면 null. */
 export function extractQuestions(full: string): AskQuestion[] | null {
   const idx = full.indexOf(ASK_MARKER);
@@ -122,7 +134,14 @@ export function extractQuestions(full: string): AskQuestion[] | null {
           (x as AskQuestion).options.every((o) => typeof o === "string"),
       )
       .map((x) => ({ q: x.q, options: x.options, multi: x.multi === true }));
-    return qs.length > 0 ? qs : null;
+    if (qs.length === 0) return null;
+
+    // 구버전 응답은 본문에 전체 질문, JSON에는 짧은 라벨만 넣었다.
+    const numbered = [...visibleText(full).matchAll(/(?:^|\n)\s*\d+\.\s+([\s\S]*?)(?=\n\s*\d+\.\s+|$)/g)]
+      .map((match) => match[1].trim());
+    return numbered.length === qs.length
+      ? qs.map((question, index) => ({ ...question, q: numbered[index] }))
+      : qs;
   } catch {
     return null;
   }

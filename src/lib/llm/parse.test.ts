@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractQuestions, generationProgress, sanitizeSpec, visibleText } from "./parse.ts";
+import {
+  extractQuestions,
+  formatInterviewAnswers,
+  generationProgress,
+  sanitizeSpec,
+  visibleText,
+} from "./parse.ts";
 
 test("visibleText hides everything after the marker", () => {
   assert.equal(visibleText('답변입니다.\n<<<PRD_JSON>>>\n{"doc":{'), "답변입니다.");
@@ -65,8 +71,28 @@ test("extractQuestions keeps the multi flag", () => {
   assert.deepEqual(extractQuestions(full), [{ q: "어려움", options: ["a", "b"], multi: true }]);
 });
 
+test("extractQuestions restores full numbered questions from legacy responses", () => {
+  const full =
+    '1. 완료 기준은 어디까지인가요?\n2. 문서는 어떻게 저장할까요?\n<<<ASK_JSON>>>\n{"questions":[{"q":"완료 기준","options":["MVP"]},{"q":"저장 단위","options":["최신 문서"]}]}';
+  assert.deepEqual(extractQuestions(full)?.map((question) => question.q), [
+    "완료 기준은 어디까지인가요?",
+    "문서는 어떻게 저장할까요?",
+  ]);
+});
+
 test("extractQuestions is null without a questions payload", () => {
   assert.equal(extractQuestions("그냥 대화 답변"), null);
+});
+
+test("formatInterviewAnswers pairs selections with questions and appends one extra note", () => {
+  const questions = [
+    { q: "완료 기준은 어디까지인가요?", options: ["MVP", "전체 백엔드"] },
+    { q: "저장 단위는 무엇인가요?", options: ["최신 문서", "전체 스냅샷"] },
+  ];
+  assert.equal(
+    formatInterviewAnswers(questions, { [questions[0].q]: ["MVP"] }, "복구도 필요해요"),
+    "완료 기준은 어디까지인가요?: MVP\n추가 요구사항: 복구도 필요해요",
+  );
 });
 
 test("sanitizeSpec normalizes priorities/status and fills missing ids", () => {
